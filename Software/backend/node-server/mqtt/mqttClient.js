@@ -15,31 +15,17 @@ const connectMQTT = (onAnomalyCallback) => {
         try {
             const rawData = JSON.parse(message.toString());
             
-            // 1. Get AI Decision (using the simple vibration val)
+            // 1. Get AI Decision
             const aiResult = await aiService.getPrediction(rawData);
             
-            // --- FIX: GENERATE MISSING FIELDS FOR NEW DASHBOARD ---
-            // If the ESP32 only sends 'vibration_val', we map it to 'accel_mag'
-            // and simulate the others so the dashboard looks alive.
-            const simulatedData = {
-                ...rawData,
-                accel_mag: rawData.vibration_val || rawData.accel_mag || 0,
-                accel_roll_rms: (rawData.vibration_val * 0.7) || 0, // Mock RMS
-                mag_norm: 40 + (Math.random() * 5), // Mock Magnetic baseline (40-45 uT)
-                temperature: 25 + (Math.random() * 2), // Mock Temp (25-27 C)
-                humidity: 60 + (Math.random() * 5),    // Mock Hum (60-65 %)
-                pressure: 1013 + (Math.random() * 10)  // Mock Pressure
-            };
-            // -------------------------------------------------------
-
             // 2. Merge Data
             const enrichedData = {
-                ...simulatedData, // Use the simulated version
+                ...rawData,
                 ...aiResult,
                 processed_at: new Date().toISOString()
             };
 
-            // 3. Push to Frontend
+            // 3. Push to Frontend (Live Graph)
             broadcastUpdate(enrichedData);
 
             // 4. Handle Anomaly Logic
