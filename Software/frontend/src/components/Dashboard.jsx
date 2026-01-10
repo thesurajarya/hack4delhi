@@ -27,7 +27,6 @@ const icons = {
   grey: getIcon("grey"),
 };
 
-// Initialize socket outside component to prevent multiple connections
 const socket = io("http://localhost:3000", { autoConnect: false });
 const API_URL = "http://localhost:3000/api/alerts";
 
@@ -66,9 +65,8 @@ export default function Dashboard() {
 
     if (mode === 'LIVE') {
         socket.connect();
-        fetchAlerts(); // Fetch historical real alerts
+        fetchAlerts(); 
         
-        // --- LIVE SOCKET LISTENERS ---
         socket.on("connect", () => addLog("Connected to Backend Server", "success"));
         socket.on("disconnect", () => addLog("Lost connection to Backend Server", "error"));
 
@@ -77,7 +75,7 @@ export default function Dashboard() {
         });
 
         socket.on("new_alert", (newAlert) => {
-            setAlerts((prev) => [newAlert, ...prev]);
+            setAlerts((prev) => [newAlert, ...prev]); // Add new alert
             setNodes((prev) => ({
                 ...prev,
                 [newAlert.nodeId]: { ...prev[newAlert.nodeId], status: newAlert.severity === "HIGH" ? "red" : "yellow" },
@@ -115,17 +113,14 @@ export default function Dashboard() {
 
     const interval = setInterval(() => {
         const timestamp = Date.now();
-        const timeStr = new Date(timestamp).toLocaleTimeString();
-        
-        // 1. Simulate Telemetry (Sine waves for realistic look)
         const t = timestamp / 1000;
         const fakeData = {
             node_id: 'TEST-NODE-01',
             timestamp: timestamp,
             lat: 28.6139, lng: 77.2090,
-            accel_mag: Math.abs(Math.sin(t)) * 0.5 + Math.random() * 0.1, // Vibration
+            accel_mag: Math.abs(Math.sin(t)) * 0.5 + Math.random() * 0.1, 
             accel_roll_rms: Math.abs(Math.sin(t)) * 0.3,
-            mag_norm: 45 + Math.cos(t) * 5, // Magnetic
+            mag_norm: 45 + Math.cos(t) * 5, 
             temperature: 28 + Math.random(),
             humidity: 60 + Math.random() * 2,
             pressure: 1013,
@@ -134,7 +129,7 @@ export default function Dashboard() {
 
         updateNodesAndTelemetry(fakeData);
 
-        // 2. Simulate Random Alert (Rarely)
+        // Simulate Random Alert
         if (Math.random() > 0.98) {
             const fakeAlert = {
                 id: timestamp,
@@ -142,18 +137,19 @@ export default function Dashboard() {
                 nodeId: 'TEST-NODE-03',
                 lat: 28.6120, lng: 77.2080,
                 severity: Math.random() > 0.5 ? 'HIGH' : 'MEDIUM',
+                status: 'OPEN', // New status field
                 isConstruction: false
             };
             setAlerts(prev => [fakeAlert, ...prev]);
             addLog(`[SIMULATION] Alert generated on TEST-NODE-03`, "error");
         }
 
-    }, 800); // Update every 800ms
+    }, 800); 
 
     return () => clearInterval(interval);
   }, [mode]);
 
-  // --- HELPER: Update State (Used by both Live and Test) ---
+  // --- HELPER: Update State ---
   const updateNodesAndTelemetry = (data) => {
     setNodes((prev) => ({
         ...prev,
@@ -162,7 +158,7 @@ export default function Dashboard() {
           lng: data.lng || data.longitude,
           alt: data.altitude || 0,
           lastSeen: data.timestamp,
-          status: prev[data.node_id]?.status || 'green', // Preserve status unless alert changes it
+          status: prev[data.node_id]?.status || 'green', 
           battery: Math.max(0, 100 - (Date.now() % 100000) / 1000), 
           rssi: -40 - Math.random() * 10
         },
@@ -186,27 +182,49 @@ export default function Dashboard() {
 
   // --- ACTIONS ---
   const fetchAlerts = async () => {
-    if (mode === 'TEST') return; // Don't fetch real alerts in test mode
+    if (mode === 'TEST') return; 
     try {
       const res = await axios.get(API_URL);
-      setAlerts(res.data);
+      // Ensure backend data has a 'status' field, if not, default based on boolean
+      const mappedAlerts = res.data.map(a => ({
+          ...a,
+          status: a.isConstruction ? 'CONSTRUCTION' : (a.status || 'OPEN')
+      }));
+      setAlerts(mappedAlerts);
     } catch (err) {
       console.error("Failed to fetch alerts", err);
     }
   };
 
-  const handleMarkConstruction = async (alertId) => {
-    if (mode === 'TEST') {
-        setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, isConstruction: true } : a));
-        addLog(`[SIMULATION] Alert ${alertId} marked as construction`, "info");
-        return;
-    }
-    try {
-      await axios.post(`${API_URL}/mark-construction`, { id: alertId });
-      addLog(`User Action: Verifying alert ${alertId} as construction site...`, "info");
-    } catch (err) {
-      addLog(`Error: Could not update alert status`, "error");
-    }
+  // --- NEW: Handle Dropdown Resolution ---
+  const handleResolutionChange = async (alertId, resolution) => {
+      // resolution = 'CONSTRUCTION' | 'CLOSED'
+      
+      // 1. Optimistic UI Update
+      setAlerts(prev => prev.map(a => 
+          a.id === alertId ? { 
+              ...a, 
+              status: resolution, 
+              isConstruction: resolution === 'CONSTRUCTION' 
+          } : a
+      ));
+
+      addLog(`User Action: Marking alert ${alertId} as ${resolution}`, "info");
+
+      if (mode === 'TEST') return;
+
+      // 2. API Call (Live Mode)
+      try {
+          if (resolution === 'CONSTRUCTION') {
+              await axios.post(`${API_URL}/mark-construction`, { id: alertId });
+          } else if (resolution === 'CLOSED') {
+              // Assuming you might add a backend endpoint for closing later
+              // await axios.post(`${API_URL}/mark-closed`, { id: alertId });
+              // For now, we assume the backend just needs to know it's handled
+          }
+      } catch (err) {
+          addLog(`Error: Sync failed with backend`, "error");
+      }
   };
 
   const handleDispatch = (alertId) => {
@@ -217,7 +235,8 @@ export default function Dashboard() {
   const filteredAlerts = useMemo(() => {
       if (filterStatus === 'ALL') return alerts;
       if (filterStatus === 'HIGH') return alerts.filter(a => a.severity === 'HIGH');
-      if (filterStatus === 'CONSTRUCTION') return alerts.filter(a => a.isConstruction);
+      if (filterStatus === 'CONSTRUCTION') return alerts.filter(a => a.status === 'CONSTRUCTION');
+      if (filterStatus === 'CLOSED') return alerts.filter(a => a.status === 'CLOSED');
       return alerts;
   }, [alerts, filterStatus]);
 
@@ -229,7 +248,7 @@ export default function Dashboard() {
         const startIndex = Math.max(0, endIndex - 20);
         return data.slice(startIndex, endIndex);
     }
-    return data.slice(-20); // Default live view (last 20)
+    return data.slice(-20); 
   }, [telemetry, selectedNode, replayMode, replayIndex]);
 
   const latestEnv = displayTelemetry.length > 0 ? displayTelemetry[displayTelemetry.length - 1] : {};
@@ -273,10 +292,10 @@ export default function Dashboard() {
     consoleBody: { flex: 1, overflowY: "auto", padding: "10px 15px", fontSize: "0.8rem", lineHeight: "1.6" },
     
     // Mode Select
-    modeSelect: {
-        padding: '6px 12px', borderRadius: '6px', border: '1px solid #475569', 
-        background: '#1e293b', color: 'white', fontWeight: 'bold', cursor: 'pointer'
-    }
+    modeSelect: { padding: "6px 12px", borderRadius: "6px", border: "1px solid #475569", background: "#1e293b", color: "white", fontWeight: "bold", cursor: "pointer" },
+    
+    // Status Select
+    statusSelect: { padding: "4px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", fontSize: "0.75rem", color: "#475569", cursor: "pointer", background: "white" }
   };
 
   // --- RENDER ---
@@ -310,8 +329,8 @@ export default function Dashboard() {
         {/* MODE SWITCHER */}
         <div style={{display:'flex', alignItems:'center', gap:'20px'}}>
             <select style={styles.modeSelect} value={mode} onChange={(e) => setMode(e.target.value)}>
-                <option value="LIVE">🔴 LIVE SENSORS</option>
-                <option value="TEST">🧪 TEST MODE (SIM)</option>
+                <option value="LIVE">LIVE SENSORS</option>
+                <option value="TEST">TEST MODE (SIM)</option>
             </select>
 
             <div style={styles.statusBadge}>
@@ -340,7 +359,32 @@ export default function Dashboard() {
                   <div style={{fontFamily:'Inter, sans-serif'}}>
                     <b style={{color:'#ef4444'}}>🚨 ALERT</b><br/>
                     Node: {alert.nodeId}<br/>
-                    Severity: {alert.severity}
+                    Severity: {alert.severity}<br/>
+                    <hr style={{margin:'8px 0', borderTop:'1px solid #e2e8f0'}}/>
+                    
+                    {/* POPUP DROPDOWN ACTIONS */}
+                    {alert.status === 'CONSTRUCTION' ? (
+                        <div style={{background:'#fef3c7', padding:'5px', borderRadius:'4px', color:'#92400e', fontSize:'0.75rem', textAlign:'center'}}>
+                            🚧 Construction Verified
+                        </div>
+                    ) : alert.status === 'CLOSED' ? (
+                        <div style={{background:'#dcfce7', padding:'5px', borderRadius:'4px', color:'#166534', fontSize:'0.75rem', textAlign:'center'}}>
+                            ✅ Resolved / Closed
+                        </div>
+                    ) : (
+                        <div style={{display:'flex', flexDirection:'column', gap:'5px'}}>
+                            <label style={{fontSize:'0.7rem', color:'#64748b'}}>Take Action:</label>
+                            <select 
+                                style={{padding:'5px', borderRadius:'4px', border:'1px solid #cbd5e1', cursor:'pointer'}}
+                                onChange={(e) => handleResolutionChange(alert.id, e.target.value)}
+                                defaultValue=""
+                            >
+                                <option value="" disabled>Select Action...</option>
+                                <option value="CONSTRUCTION">🚧 Verify Construction</option>
+                                <option value="CLOSED">✅ Close / False Alarm</option>
+                            </select>
+                        </div>
+                    )}
                   </div>
                 </Popup>
               </Marker>
@@ -379,7 +423,7 @@ export default function Dashboard() {
               </div>
               {/* FILTER PILLS */}
               <div>
-                  {['ALL', 'HIGH', 'CONSTRUCTION'].map(filter => (
+                  {['ALL', 'HIGH', 'CONSTRUCTION', 'CLOSED'].map(filter => (
                       <button key={filter} style={styles.filterPill(filterStatus === filter)} onClick={() => setFilterStatus(filter)}>
                           {filter}
                       </button>
@@ -393,13 +437,13 @@ export default function Dashboard() {
                     <th style={{textAlign:'left', padding:'10px 15px', fontSize:'0.75rem', color:'#64748b'}}>TIME</th>
                     <th style={{textAlign:'left', padding:'10px 15px', fontSize:'0.75rem', color:'#64748b'}}>NODE</th>
                     <th style={{textAlign:'left', padding:'10px 15px', fontSize:'0.75rem', color:'#64748b'}}>LOC</th>
-                    <th style={{textAlign:'left', padding:'10px 15px', fontSize:'0.75rem', color:'#64748b'}}>STATUS</th>
+                    <th style={{textAlign:'left', padding:'10px 15px', fontSize:'0.75rem', color:'#64748b'}}>SEVERITY</th>
                     <th style={{textAlign:'right', padding:'10px 15px', fontSize:'0.75rem', color:'#64748b'}}>ACTION</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredAlerts.map((alert, idx) => (
-                    <tr key={idx} style={{borderBottom:'1px solid #f1f5f9', background: alert.isConstruction ? '#fffbeb' : 'white'}}>
+                    <tr key={idx} style={{borderBottom:'1px solid #f1f5f9', background: alert.status === 'CONSTRUCTION' ? '#fffbeb' : alert.status === 'CLOSED' ? '#f0fdf4' : 'white'}}>
                       <td style={{padding:'10px 15px', fontSize:'0.8rem'}}>{new Date(alert.timestamp).toLocaleTimeString()}</td>
                       <td style={{padding:'10px 15px', fontSize:'0.8rem', fontWeight:'600'}}>{alert.nodeId}</td>
                       <td style={{padding:'10px 15px', fontSize:'0.75rem', fontFamily:'monospace', color:'#64748b'}}>{Number(alert.lat).toFixed(3)}, {Number(alert.lng).toFixed(3)}</td>
@@ -409,13 +453,23 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td style={{padding:'10px 15px', textAlign:'right'}}>
-                        {alert.isConstruction ? (
+                        {alert.status === 'CONSTRUCTION' ? (
                             <span style={{fontSize:'0.75rem', color:'#b45309'}}>🚧 Verified</span>
+                        ) : alert.status === 'CLOSED' ? (
+                            <span style={{fontSize:'0.75rem', color:'#15803d'}}>✅ Closed</span>
                         ) : (
-                            <>
-                                <button className="btn-action" onClick={() => handleMarkConstruction(alert.id)}>Verify Site</button>
+                            <div style={{display:'flex', justifyContent:'flex-end', gap:'5px'}}>
+                                <select 
+                                    style={styles.statusSelect}
+                                    onChange={(e) => handleResolutionChange(alert.id, e.target.value)}
+                                    defaultValue=""
+                                >
+                                    <option value="" disabled>Action ▼</option>
+                                    <option value="CONSTRUCTION">🚧 Verify Construction</option>
+                                    <option value="CLOSED">✅ Close Alert</option>
+                                </select>
                                 <button className="btn-action btn-dispatch" onClick={() => handleDispatch(alert.id)}>Dispatch</button>
-                            </>
+                            </div>
                         )}
                       </td>
                     </tr>
