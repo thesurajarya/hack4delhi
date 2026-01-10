@@ -32,7 +32,7 @@ Step 5: Go into `Software/backend/node-server`.
 
 Step 6: run `npm install` in your terminal.
 
-Step 7: Go into `cd ai-services` and run `pip install -r requirements.txt`.
+Step 7: Go into `cd ai-service` and run `pip install -r requirements.txt`.
 
 
 After succesfully installing all the dependencies, Run the WebApp by following the steps below:
