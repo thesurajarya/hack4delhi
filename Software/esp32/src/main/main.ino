@@ -13,7 +13,7 @@
 // ===============================
 const char* ssid = "OnePlusNord3";
 const char* password = "hp97omltp";
-const char* mqtt_server = "broker.hivemq.com"; 
+const char* mqtt_server = "test.mosquitto.org"; 
 const char* node_id = "TRACK_SEC_42";
 
 WiFiClient espClient;

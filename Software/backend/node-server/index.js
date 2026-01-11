@@ -1,16 +1,17 @@
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
-const bodyParser = require('body-parser'); // Import body-parser
-const { initSocket, broadcastUpdate } = require('./socket/socket');
+const bodyParser = require('body-parser'); 
+const { initSocket } = require('./socket/socket');
 const { connectMQTT } = require('./mqtt/mqttClient');
 const dataController = require('./controllers/dataController');
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json()); // Enable JSON body parsing
+app.use(bodyParser.json()); 
 
 const server = http.createServer(app);
+// Initialize Socket.io (Must be done before MQTT)
 const io = initSocket(server);
 
 // --- API ROUTES ---
@@ -32,16 +33,30 @@ app.post('/api/alerts/mark-construction', (req, res) => {
     }
 });
 
-// MQTT Logic Integration
+// --- START SYSTEM ---
+
+// Connect to MQTT and pass the "Anomaly Handler" callback
 const mqttClient = connectMQTT((data) => {
-    // This callback runs when AI detects anomaly
+    // This runs ONLY when an anomaly is confirmed
     if (data.is_anomaly) {
-        const severity = data.confidence < -0.2 ? "RED" : "YELLOW"; // Example logic
+        console.log(`📝 Registering Incident: ${data.node_id}`);
+        
+        // Use the severity calculated by Python (or fallback to MEDIUM)
+        const severity = data.severity || "MEDIUM"; 
+        
+        // Save to Database (JSON file)
         const savedAlert = dataController.addAlert(data.node_id, severity);
         
-        // Broadcast FULL alert object with Lat/Lng to Frontend
+        // Broadcast FULL alert object to Frontend (Shows Red Marker / Table Row)
         io.emit('new_alert', savedAlert);
     }
 });
 
-server.listen(3000, () => console.log('🚀 Server + API running on 3000'));
+const PORT = 3000;
+server.listen(PORT, () => {
+    console.log(`\n==================================================`);
+    console.log(`🚀 RailGuard Backend Active`);
+    console.log(`👉 API:    http://localhost:${PORT}`);
+    console.log(`👉 Socket: Enabled`);
+    console.log(`==================================================\n`);
+});
