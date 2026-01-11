@@ -101,6 +101,7 @@ void setup() {
   Serial.println("\n✅ WiFi Connected");
 
   client.setServer(mqtt_server, 1883);
+  client.setBufferSize(1024);
 }
 
 void reconnect() {
@@ -199,7 +200,7 @@ void loop() {
   char buffer[1024];
   size_t n = serializeJson(doc, buffer);
 
-  client.publish("railway/sensor/1", buffer, n);
+  client.publish("railguard_live_stream", buffer, n);
 
   // --- DEBUG PRINT: All Raw Values ---
   Serial.print("Ax:"); Serial.print(ax, 2);

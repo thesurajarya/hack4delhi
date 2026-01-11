@@ -24,35 +24,45 @@ const connectMQTT = (onAnomalyCallback) => {
 
     client.on('message', async (topic, message) => {
         try {
-            // 1. Parse Data
-            const rawData = JSON.parse(message.toString());
+            // --- DEBUG: Print exactly what arrived ---
+            const msgString = message.toString();
             
-            // --- CRITICAL FIX: BROADCAST RAW DATA IMMEDIATELY ---
-            // This ensures the graph NEVER freezes, even if AI is slow.
-            // We send a temporary packet first.
+            // 1. Safety Check: Is it empty?
+            if (!msgString || msgString.trim().length === 0) {
+                console.warn("⚠️ Received EMPTY message. Ignoring.");
+                return;
+            }
+
+            // 2. Parse Data
+            let rawData;
+            try {
+                rawData = JSON.parse(msgString);
+            } catch (jsonErr) {
+                console.error("❌ JSON Parse Failed. Received:", msgString);
+                return; // Stop here if it's not valid JSON
+            }
+            
+            // 3. BROADCAST RAW DATA IMMEDIATELY
             broadcastUpdate({ ...rawData, is_anomaly: false, processing: true });
 
-            // 2. Get AI Prediction (Async)
+            // 4. Get AI Prediction (Async)
             const aiResult = await aiService.getPrediction(rawData);
             
-            // 3. Merge & Broadcast Final Result
+            // 5. Merge & Broadcast Final Result
             const enrichedData = {
                 ...rawData,
                 ...aiResult,
                 processed_at: new Date().toISOString()
             };
             
-            // Update Dashboard again with Anomaly Info
+            // Update Dashboard again
             broadcastUpdate(enrichedData);
 
-            // 4. Handle Alerts (Non-Blocking)
+            // 6. Handle Alerts
             if(enrichedData.is_anomaly) {
                 console.log(`🚨 ANOMALY: ${enrichedData.node_id} | Score: ${enrichedData.anomaly_score}`);
-                
-                // Fire Email (don't await - let it run in background)
                 sendCriticalAlert(enrichedData).catch(e => console.error("Email Error:", e.message));
 
-                // Format for Alert Feed
                 const alertPacket = {
                     id: Date.now(),
                     nodeId: enrichedData.node_id,
@@ -65,14 +75,7 @@ const connectMQTT = (onAnomalyCallback) => {
                     anomaly_score: enrichedData.anomaly_score
                 };
                 
-                // Trigger Frontend Alert (Sound/Red Marker)
-                if (onAnomalyCallback) {
-                    try {
-                        onAnomalyCallback(alertPacket);
-                    } catch (cbErr) {
-                        console.error("Callback Error:", cbErr.message);
-                    }
-                }
+                if (onAnomalyCallback) onAnomalyCallback(alertPacket);
             }
         } catch (err) {
             console.error("❌ Message Loop Error:", err.message);

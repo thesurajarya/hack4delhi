@@ -1,7 +1,8 @@
 module.exports = {
     mqtt: {
-        brokerUrl: 'test.mosquitto.org', 
-        topic: 'railway/sensor/+'
+        brokerUrl: 'mqtt://test.mosquitto.org', 
+        // topic: 'railway/sensor/+'
+        topic: 'railguard_live_stream'
     },
     ai: {
         // CHANGED: Port 8000 -> 5000 (Matches your Python main.py)
