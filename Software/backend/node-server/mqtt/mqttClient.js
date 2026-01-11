@@ -2,69 +2,80 @@ const mqtt = require('mqtt');
 const config = require('../config/config');
 const aiService = require('../ai/aiService');
 const { broadcastUpdate } = require('../socket/socket');
-const { sendCriticalAlert } = require('../services/alertService'); // Import Alert Service
+const { sendCriticalAlert } = require('../services/alertService');
 
 const connectMQTT = (onAnomalyCallback) => {
-    const client = mqtt.connect(config.mqtt.brokerUrl);
+    // Robust connection options
+    const client = mqtt.connect(config.mqtt.brokerUrl, {
+        reconnectPeriod: 1000,
+        connectTimeout: 30 * 1000,
+        keepalive: 60
+    });
 
     client.on('connect', () => {
         console.log('✅ Connected to MQTT Broker');
-        client.subscribe(config.mqtt.topic);
+        client.subscribe(config.mqtt.topic, (err) => {
+            if (!err) console.log(`📡 Listening on: ${config.mqtt.topic}`);
+        });
     });
+
+    client.on('error', (err) => console.error("⚠️ MQTT Error:", err.message));
+    client.on('offline', () => console.warn("🔌 MQTT Offline"));
 
     client.on('message', async (topic, message) => {
         try {
+            // 1. Parse Data
             const rawData = JSON.parse(message.toString());
             
-            // 1. Get AI Decision
-            // Expects: { is_anomaly: true, severity: 'HIGH', anomaly_score: -0.5 }
+            // --- CRITICAL FIX: BROADCAST RAW DATA IMMEDIATELY ---
+            // This ensures the graph NEVER freezes, even if AI is slow.
+            // We send a temporary packet first.
+            broadcastUpdate({ ...rawData, is_anomaly: false, processing: true });
+
+            // 2. Get AI Prediction (Async)
             const aiResult = await aiService.getPrediction(rawData);
             
-            // 2. Merge Data (Raw Sensor Data + AI Insights)
+            // 3. Merge & Broadcast Final Result
             const enrichedData = {
                 ...rawData,
                 ...aiResult,
                 processed_at: new Date().toISOString()
             };
-
-            // 3. Push Telemetry to Frontend (Updates Live Graphs immediately)
-            // This happens regardless of anomaly status
+            
+            // Update Dashboard again with Anomaly Info
             broadcastUpdate(enrichedData);
 
-            // 4. Handle Anomaly Logic
+            // 4. Handle Alerts (Non-Blocking)
             if(enrichedData.is_anomaly) {
-                console.log(`⚠️ CRITICAL ALERT: Tampering detected at ${enrichedData.node_id}`);
+                console.log(`🚨 ANOMALY: ${enrichedData.node_id} | Score: ${enrichedData.anomaly_score}`);
                 
-                // --- STEP A: Trigger External Notifications (Email) ---
-                // This calls the service we created. It handles rate-limiting internally.
-                sendCriticalAlert(enrichedData);
+                // Fire Email (don't await - let it run in background)
+                sendCriticalAlert(enrichedData).catch(e => console.error("Email Error:", e.message));
 
-                // --- STEP B: Format Alert for Dashboard & Storage ---
-                // We create a structured object that matches what the React Dashboard expects
+                // Format for Alert Feed
                 const alertPacket = {
-                    id: Date.now(), // Unique ID for React lists
+                    id: Date.now(),
                     nodeId: enrichedData.node_id,
                     severity: enrichedData.severity || 'HIGH',
                     timestamp: enrichedData.timestamp || Date.now(),
-                    // Map ESP32 'latitude' to Dashboard 'lat'
                     lat: enrichedData.latitude, 
                     lng: enrichedData.longitude,
-                    // New Fields for User Action
-                    status: 'OPEN', // Default status for dropdown
+                    status: 'OPEN',
                     isConstruction: false,
                     anomaly_score: enrichedData.anomaly_score
                 };
                 
-                // --- STEP C: Execute Callback ---
-                // This passes 'alertPacket' back to index.js to:
-                // 1. Save to alerts.json (Persistence)
-                // 2. Emit 'new_alert' socket event (Frontend Sound & Map Marker)
+                // Trigger Frontend Alert (Sound/Red Marker)
                 if (onAnomalyCallback) {
-                    onAnomalyCallback(alertPacket);
+                    try {
+                        onAnomalyCallback(alertPacket);
+                    } catch (cbErr) {
+                        console.error("Callback Error:", cbErr.message);
+                    }
                 }
             }
         } catch (err) {
-            console.error("Error processing MQTT message:", err.message);
+            console.error("❌ Message Loop Error:", err.message);
         }
     });
 
