@@ -4,8 +4,11 @@ const aiService = require('../ai/aiService');
 const { broadcastUpdate } = require('../socket/socket');
 const { sendCriticalAlert } = require('../services/alertService');
 
+// Cooldown to prevent database spam (5 seconds)
+const ALERT_COOLDOWN = 5000; 
+let lastAlertTime = 0;
+
 const connectMQTT = (onAnomalyCallback) => {
-    // Robust connection options
     const client = mqtt.connect(config.mqtt.brokerUrl, {
         reconnectPeriod: 1000,
         connectTimeout: 30 * 1000,
@@ -19,63 +22,55 @@ const connectMQTT = (onAnomalyCallback) => {
         });
     });
 
-    client.on('error', (err) => console.error("⚠️ MQTT Error:", err.message));
-    client.on('offline', () => console.warn("🔌 MQTT Offline"));
-
     client.on('message', async (topic, message) => {
         try {
-            // --- DEBUG: Print exactly what arrived ---
             const msgString = message.toString();
-            
-            // 1. Safety Check: Is it empty?
-            if (!msgString || msgString.trim().length === 0) {
-                console.warn("⚠️ Received EMPTY message. Ignoring.");
-                return;
-            }
+            if (!msgString || msgString.trim().length === 0) return;
 
-            // 2. Parse Data
-            let rawData;
-            try {
-                rawData = JSON.parse(msgString);
-            } catch (jsonErr) {
-                console.error("❌ JSON Parse Failed. Received:", msgString);
-                return; // Stop here if it's not valid JSON
-            }
+            // 1. Parse Data
+            const rawData = JSON.parse(msgString);
             
-            // 3. BROADCAST RAW DATA IMMEDIATELY
+            // 2. Broadcast Raw Data (Live Graph) - ALWAYS do this
             broadcastUpdate({ ...rawData, is_anomaly: false, processing: true });
 
-            // 4. Get AI Prediction (Async)
+            // 3. Get AI Prediction
             const aiResult = await aiService.getPrediction(rawData);
             
-            // 5. Merge & Broadcast Final Result
+            // 4. Merge Data
             const enrichedData = {
                 ...rawData,
                 ...aiResult,
                 processed_at: new Date().toISOString()
             };
             
-            // Update Dashboard again
+            // 5. Update Dashboard with new Score - ALWAYS do this
             broadcastUpdate(enrichedData);
 
-            // 6. Handle Alerts
+            // 6. Handle Alerts (WITH COOLDOWN FIX)
             if(enrichedData.is_anomaly) {
-                console.log(`🚨 ANOMALY: ${enrichedData.node_id} | Score: ${enrichedData.anomaly_score}`);
-                sendCriticalAlert(enrichedData).catch(e => console.error("Email Error:", e.message));
-
-                const alertPacket = {
-                    id: Date.now(),
-                    nodeId: enrichedData.node_id,
-                    severity: enrichedData.severity || 'HIGH',
-                    timestamp: enrichedData.timestamp || Date.now(),
-                    lat: enrichedData.latitude, 
-                    lng: enrichedData.longitude,
-                    status: 'OPEN',
-                    isConstruction: false,
-                    anomaly_score: enrichedData.anomaly_score
-                };
+                const now = Date.now();
                 
-                if (onAnomalyCallback) onAnomalyCallback(alertPacket);
+                // --- THE CRITICAL FIX IS HERE ---
+                if (now - lastAlertTime > ALERT_COOLDOWN) {
+                    
+                    // A. Update Timer
+                    lastAlertTime = now;
+
+                    // B. Log & Process
+                    console.log(`🚨 ANOMALY: ${enrichedData.node_id} | Score: ${enrichedData.anomaly_score}`);
+                    
+                    // C. Trigger Database Save & Frontend Alert (ONLY HERE)
+                    if (onAnomalyCallback) {
+                        onAnomalyCallback(enrichedData);
+                    }
+
+                    // D. Send Email (Non-blocking)
+                    sendCriticalAlert(enrichedData).catch(e => console.error("Email Error:", e.message));
+
+                } else {
+                    // E. Suppress
+                    console.log(`⏳ Alert suppressed for ${enrichedData.node_id} (Cooldown active)`);
+                }
             }
         } catch (err) {
             console.error("❌ Message Loop Error:", err.message);

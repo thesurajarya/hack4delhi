@@ -37,18 +37,31 @@ app.post('/api/alerts/mark-construction', (req, res) => {
 
 // Connect to MQTT and pass the "Anomaly Handler" callback
 const mqttClient = connectMQTT((data) => {
-    // This runs ONLY when an anomaly is confirmed
-    if (data.is_anomaly) {
-        console.log(`📝 Registering Incident: ${data.node_id}`);
+    // FIX: Normalize the Node ID (Handle both 'nodeId' and 'node_id')
+    const targetNodeId = data.nodeId || data.node_id;
+
+    if (targetNodeId) {
+        console.log(`📝 Registering Incident: ${targetNodeId}`);
         
         // Use the severity calculated by Python (or fallback to MEDIUM)
         const severity = data.severity || "MEDIUM"; 
         
-        // Save to Database (JSON file)
-        const savedAlert = dataController.addAlert(data.node_id, severity);
+        // 1. Save to Database (JSON file)
+        const savedAlert = dataController.addAlert(targetNodeId, severity);
         
-        // Broadcast FULL alert object to Frontend (Shows Red Marker / Table Row)
-        io.emit('new_alert', savedAlert);
+        // 2. MERGE Data for Frontend
+        // We must combine the Database ID with the Sensor Data (Lat/Lng) 
+        // otherwise the map marker and table row won't appear.
+        const broadcastPacket = {
+            ...savedAlert,                 // Contains DB ID and Timestamp
+            lat: data.lat || data.latitude || 28.6139, // Ensure Location exists
+            lng: data.lng || data.longitude || 77.2090,
+            anomaly_score: data.anomaly_score || 1.0,
+            nodeId: targetNodeId           // Ensure Frontend gets 'nodeId'
+        };
+        
+        // 3. Broadcast FULL alert object to Frontend
+        io.emit('new_alert', broadcastPacket);
     }
 });
 

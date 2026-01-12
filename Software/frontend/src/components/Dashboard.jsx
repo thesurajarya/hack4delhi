@@ -131,22 +131,43 @@ export default function Dashboard() {
 
       // B. ALERTS (ANOMALY DETECTED)
       socket.on("new_alert", (newAlert) => {
-        // Play Sound
+        console.log("🔔 RECEIVED ALERT:", newAlert); // Debugging Log
+
+        // 1. Play Sound (Browser needs user interaction first, but we try)
         try {
           const audio = new Audio("/alert.mp3");
-          audio.play().catch((e) => console.log("Audio block:", e));
+          audio.play().catch((e) => console.log("Audio block (Click page to enable):", e));
         } catch (err) { console.error(err); }
 
-        // Update Data
-        setAlerts((prev) => [newAlert, ...prev]);
+        // 2. Normalize Data (Fix nodeId vs node_id mismatch)
+        const normalizedAlert = {
+            ...newAlert,
+            id: newAlert.id || Date.now(),
+            nodeId: newAlert.nodeId || newAlert.node_id || "UNKNOWN",
+            lat: newAlert.lat || newAlert.latitude || 28.6139,
+            lng: newAlert.lng || newAlert.longitude || 77.2090,
+            status: newAlert.status || 'OPEN'
+        };
+
+        // 3. Update Table Data
+        setAlerts((prev) => {
+            // Avoid duplicates
+            if (prev.find(a => a.id === normalizedAlert.id)) return prev;
+            return [normalizedAlert, ...prev];
+        });
+
+        // 4. Update Map Marker Status
         setNodes((prev) => ({
           ...prev,
-          [newAlert.nodeId]: {
-            ...prev[newAlert.nodeId],
-            status: newAlert.severity === "HIGH" ? "red" : "yellow",
+          [normalizedAlert.nodeId]: {
+            ...prev[normalizedAlert.nodeId],
+            status: normalizedAlert.severity === "HIGH" ? "red" : "yellow",
+            lat: normalizedAlert.lat,
+            lng: normalizedAlert.lng
           },
         }));
-        addLog(`🚨 ANOMALY: Node ${newAlert.nodeId} | Severity: ${newAlert.severity}`, "error");
+
+        addLog(`🚨 ANOMALY: Node ${normalizedAlert.nodeId} | Severity: ${normalizedAlert.severity}`, "error");
       });
 
       socket.on("alert_update", (updatedAlert) => {

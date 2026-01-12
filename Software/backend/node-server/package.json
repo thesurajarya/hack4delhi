@@ -11,5 +11,10 @@
     "mqtt": "^5.0.0",
     "nodemailer": "^7.0.12",
     "socket.io": "^4.7.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js",
+    "dev": "nodemon index.js --ignore \"data/*.json\" --ignore \"alerts.json\""
   }
 }
