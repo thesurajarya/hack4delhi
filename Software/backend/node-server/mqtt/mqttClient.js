@@ -16,7 +16,7 @@ const connectMQTT = (onAnomalyCallback) => {
     });
 
     client.on('connect', () => {
-        console.log('✅ Connected to MQTT Broker');
+        console.log('Connected to MQTT Broker');
         client.subscribe(config.mqtt.topic, (err) => {
             if (!err) console.log(`📡 Listening on: ${config.mqtt.topic}`);
         });
@@ -69,11 +69,11 @@ const connectMQTT = (onAnomalyCallback) => {
 
                 } else {
                     // E. Suppress
-                    console.log(`⏳ Alert suppressed for ${enrichedData.node_id} (Cooldown active)`);
+                    console.log(`Alert suppressed for ${enrichedData.node_id} (Cooldown active)`);
                 }
             }
         } catch (err) {
-            console.error("❌ Message Loop Error:", err.message);
+            console.error("Message Loop Error:", err.message);
         }
     });
 

@@ -14,7 +14,7 @@ app = FastAPI()
 # --- STARTUP CHECK ---
 # Look for this banner in your terminal to confirm the update!
 print("\n" + "="*60)
-print("🚀 AI SERVICE LOADED: GRAVITY FIX (15.0) | TILT DISABLED")
+print("AI SERVICE LOADED: GRAVITY FIX (15.0) | TILT DISABLED")
 print("="*60 + "\n")
 
 # ===============================
@@ -26,11 +26,11 @@ SCALER_FILE = "scaler.pkl"
 if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
     model  = joblib.load(MODEL_FILE)
     scaler = joblib.load(SCALER_FILE)
-    print("✅ AI Model Loaded Successfully")
+    print("==> AI Model Loaded Successfully")
 else:
     model  = None
     scaler = None
-    print("⚠️ No model found - Running in Physics-Only Mode")
+    print("==> No model found - Running in Physics-Only Mode")
 
 # Features must match your training data exactly
 FEATURES = [
@@ -116,7 +116,7 @@ def predict(data: SensorInput):
             # Normalize score (15.0 -> 0.0, 25.0 -> 1.0)
             anomaly_score = min((current_accel_mag - 15.0) / 10.0, 1.0)
             reasons.append(f"Violent Shake (Mag: {current_accel_mag:.1f})")
-            print(f"🚨 SHAKE DETECTED! Mag: {current_accel_mag:.2f}")
+            print(f"==> SHAKE DETECTED! Mag: {current_accel_mag:.2f}")
 
         # RULE 2: AI MODEL (Only checks if physics didn't already trigger)
         elif not is_anomaly and model and scaler:

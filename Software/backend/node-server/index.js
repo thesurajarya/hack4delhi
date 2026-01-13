@@ -41,7 +41,7 @@ const mqttClient = connectMQTT((data) => {
     const targetNodeId = data.nodeId || data.node_id;
 
     if (targetNodeId) {
-        console.log(`📝 Registering Incident: ${targetNodeId}`);
+        console.log(`Registering Incident: ${targetNodeId}`);
         
         // Use the severity calculated by Python (or fallback to MEDIUM)
         const severity = data.severity || "MEDIUM"; 
@@ -68,8 +68,8 @@ const mqttClient = connectMQTT((data) => {
 const PORT = 3000;
 server.listen(PORT, () => {
     console.log(`\n==================================================`);
-    console.log(`🚀 RailGuard Backend Active`);
-    console.log(`👉 API:    http://localhost:${PORT}`);
-    console.log(`👉 Socket: Enabled`);
+    console.log(`RailGuard Backend Active`);
+    console.log(`API:    http://localhost:${PORT}`);
+    console.log(`Socket: Enabled`);
     console.log(`==================================================\n`);
 });

@@ -34,7 +34,7 @@ const sendCriticalAlert = async (data) => {
     const mailOptions = {
         from: `"RailGuard System" <${process.env.EMAIL_USER}>`,
         to: process.env.ALERT_RECEIVER, // <--- Loaded from .env
-        subject: `🚨 CRITICAL ALERT: Tampering Detected at ${nodeId}`,
+        subject: `CRITICAL ALERT: Tampering Detected at ${nodeId}`,
         html: `
             <div style="font-family: Arial; border: 2px solid red; padding: 20px;">
                 <h2 style="color: red;">⚠️ ANOMALY DETECTED</h2>
@@ -58,9 +58,9 @@ const sendCriticalAlert = async (data) => {
     // 4. Send
     try {
         await transporter.sendMail(mailOptions);
-        console.log(`📧 Email Alert sent for ${nodeId}`);
+        console.log(`==> Email Alert sent for ${nodeId}`);
     } catch (error) {
-        console.error('❌ Failed to send email:', error);
+        console.error('==> Failed to send email:', error);
     }
 };
 
